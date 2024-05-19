@@ -1,0 +1,6 @@
+---
+- name: Test My mongodb role
+  hosts: db
+  become: true
+  roles:
+    - mongodb_install

@@ -1,0 +1,12 @@
+pytesseract
+Pillow
+fastapi
+pydantic
+pydantic-settings
+uvicorn
+beanie
+requests
+pymongo
+pytest 
+pytest_asyncio
+httpx

@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-data
+  namespace: CHANGE_NAMESPACE
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 1Gi
+  hostPath:
+    path: /data/mongo
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc
+  namespace: CHANGE_NAMESPACE
+spec:
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce 
+  volumeName: mongo-data  # Corrected volumeName
+  resources:
+    requests:
+      storage: 1Gi
+

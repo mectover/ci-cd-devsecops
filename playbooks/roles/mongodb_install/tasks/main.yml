@@ -1,0 +1,48 @@
+---
+# tasks file for mongodb_install
+
+- name: Install required packages
+  apt:
+    name:
+      - gnupg
+      - curl
+    state: present
+  become_user: root
+
+- name: Remove MongoDB GPG key backup file if it exists
+  command: sudo rm -f /usr/share/keyrings/mongodb-server-7.0.gpg
+  ignore_errors: true
+
+- name: Download MongoDB GPG key
+  shell: "sudo curl -fsSL https://pgp.mongodb.com/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor"
+  become_user: root
+
+
+
+- name: Add MongoDB repository
+  lineinfile:
+    path: /etc/apt/sources.list.d/mongodb-org-7.0.list
+    line: "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/7.0 multiverse"
+    create: yes
+  become_user: root  # Run this command as root
+
+
+- name: Update APT cache
+  apt:
+    update_cache: yes
+  become: yes
+  become_user: root
+
+- name: Install MongoDB
+  apt:
+    name: mongodb-org
+    state: present
+
+- name: Copy MongoDB configuration file to the target machine
+  template:
+    src: "{{ mongo_db_config_template }}" # Replace with the actual path to your local MongoDB config file
+    dest: "{{ remote_path_mongo_db }}" # Replace with the desired path on the remote machine
+    owner: ubuntu  # Replace with the remote user who should own the file
+    group: ubuntu  # Replace with the remote group that should own the file
+    mode: 0644  # Adjust the permissions as needed
+  notify: Restart MongoDB Service

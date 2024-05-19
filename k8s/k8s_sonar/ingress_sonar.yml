@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sonar-ingress
+  namespace: sonar
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/issuer: my-root-ca-issuer
+
+  labels:
+    app: sonar
+spec:
+  rules:
+  - host: sonarqube-imt-atlantique-devops-2024.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: sonar-svc
+            port:
+              number: 9000
+  tls:
+  - hosts:
+    - sonarqube-imt-atlantique-devops-2024.com
+
+

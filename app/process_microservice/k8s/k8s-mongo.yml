@@ -1,0 +1,65 @@
+# mongo-deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: CHANGE_NAMESPACE
+  name: mongo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+      - name: mongo
+        image: mongo
+        args:
+          - "--dbpath"
+          - "/data/db"
+          - "--bind_ip"
+          - "0.0.0.0"
+        ports:
+          - containerPort: 27017
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: mongo-creds
+              key: username
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mongo-creds
+              key: password
+        volumeMounts:
+        - name: mongo-data
+          mountPath: "/data/db"
+
+
+      volumes:
+      - name: mongo-data
+        persistentVolumeClaim:
+          claimName: pvc
+
+---
+
+# mongo-service.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: CHANGE_NAMESPACE
+  name: mongo-service
+spec:
+  selector:
+    app: mongo
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: 27017
+  type: ClusterIP

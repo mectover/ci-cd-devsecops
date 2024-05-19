@@ -1,0 +1,6 @@
+---
+# defaults file for mongodb_install
+mongo_db_config_template : ../templates/mongo_db_config.conf
+remote_path_mongo_db: /etc/mongod.conf
+mongo_db_log_path: /var/log/mongodb/mongod.log
+db_path: /var/lib/mongodb

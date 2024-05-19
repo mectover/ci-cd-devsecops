@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: process-image-ingress
+  namespace: dev
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    # cert-manager.io/issuer: my-root-ca-issuer
+  labels:
+    app: process-image-ingress
+spec:
+  rules:
+  - host: process-image-service
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: process-image-service
+            port:
+              number: 80

@@ -1,0 +1,293 @@
+stages:
+- test
+- build
+- unit-test
+- security-testing
+- deploy
+- dynamic-security-testing
+
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Jobs/Secret-Detection.gitlab-ci.yml
+  - template: Security/SAST-IaC.gitlab-ci.yml
+
+
+
+
+variables:
+  MY_BRANCH: "unset"
+
+before_script:
+  - |
+    if [ ${CI_COMMIT_BRANCH} == "main" ]; then
+      export MY_BRANCH="default"
+    else
+      export MY_BRANCH=${CI_COMMIT_BRANCH}
+    fi
+  - echo "My current branch is:" $MY_BRANCH
+
+
+
+
+
+
+
+
+sonarqube_scan:
+  stage: test
+  only:
+    - dev
+    - main
+  script:
+  - mv sonar-scanner-5.0.1.3006-linux sonar-scanner
+  - chmod 777 sonar-scanner/bin/sonar-scanner
+  - ./sonar-scanner/bin/sonar-scanner -Dsonar.projectKey=photo -Dsonar.sources=. -Dsonar.host.url=${SONAR_URL}  -Dsonar.login=${SONAR_LOGIN}   -X
+
+
+
+
+
+
+
+ 
+
+
+build_photographer:
+  stage: build
+  only:
+    - dev
+    - main
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  # These variables are needed to make executor image able to download images
+  variables:
+    HTTP_PROXY: http://proxy.enst-bretagne.fr:8080
+    HTTPS_PROXY: http://proxy.enst-bretagne.fr:8080
+    NO_PROXY: gitlab-df.imt-atlantique.fr,gitlab-df-registry.imt-atlantique.fr
+  before_script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+  script:
+    - >-
+      /kaniko/executor
+      --context "${CI_PROJECT_DIR}/app/photographer-service"
+      --dockerfile "${CI_PROJECT_DIR}/app/photographer-service/Dockerfile"
+      --destination "${CI_REGISTRY_IMAGE}/photographer:${CI_COMMIT_SHORT_SHA}"
+      --build-arg HTTP_PROXY=${HTTP_PROXY}
+      --build-arg HTTPS_PROXY=${HTTPS_PROXY}
+
+      # Again, HTTP(S)_PROXY needed for the docker build with kaniko
+
+build_photo:
+  stage: build
+  only:
+    - dev
+    - main
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  # These variables are needed to make executor image able to download images
+  variables:
+    HTTP_PROXY: http://proxy.enst-bretagne.fr:8080
+    HTTPS_PROXY: http://proxy.enst-bretagne.fr:8080
+    NO_PROXY: gitlab-df.imt-atlantique.fr,gitlab-df-registry.imt-atlantique.fr
+  before_script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+  script:
+    - >-
+      /kaniko/executor
+      --context "${CI_PROJECT_DIR}/app/photo-service"
+      --dockerfile "${CI_PROJECT_DIR}/app/photo-service/Dockerfile"
+      --destination "${CI_REGISTRY_IMAGE}/photo-service:${CI_COMMIT_SHORT_SHA}"
+      --build-arg HTTP_PROXY=${HTTP_PROXY}
+      --build-arg HTTPS_PROXY=${HTTPS_PROXY}
+
+      # Again, HTTP(S)_PROXY needed for the docker build with kaniko
+
+
+unit_test_process_image:
+  stage: unit-test
+  only:
+    - dev
+    - main
+  variables:
+    MONGO_HOST: mongo-test
+  image: $CI_REGISTRY/$CI_PROJECT_PATH/process-image-service
+  script:
+  - cd app/process_microservice
+  - curl http://10.233.20.146/jobs/image_to_text/aaaaa
+  - python process_image_service.py &
+  - server_pid=$!
+  - sleep 10
+  # Run pytest for your test script
+  - pytest test_process.py
+  # Kill the server process
+  - kill $server_pid
+  services:
+  - name: mongo:4.4.12
+    alias: mongo-test
+
+
+
+unit_test_photographer:
+  stage: unit-test
+  only:
+    - dev
+    - main
+  variables:
+    MONGO_HOST: mongo-test
+  image: $CI_REGISTRY/$CI_PROJECT_PATH/photoapptest
+  script:
+  - cd app/photographer-service
+  - pytest -p no:warnings
+  services:
+  - name: mongo:4.4.12
+    alias: mongo-test
+
+build_process_microservice:
+  stage: release
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  # These variables are needed to make executor image able to download images
+  variables:
+    HTTP_PROXY: http://proxy.enst-bretagne.fr:8080
+    HTTPS_PROXY: http://proxy.enst-bretagne.fr:8080
+    NO_PROXY: gitlab-df.imt-atlantique.fr,gitlab-df-registry.imt-atlantique.fr
+  before_script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+  script:
+    - >-
+      /kaniko/executor
+      --context "${CI_PROJECT_DIR}/app/process_microservice"
+      --dockerfile "${CI_PROJECT_DIR}/app/process_microservice/Dockerfile"
+      --destination "${CI_REGISTRY_IMAGE}/process_microservice:${CI_COMMIT_SHORT_SHA}"
+      --build-arg HTTP_PROXY=${HTTP_PROXY}
+      --build-arg HTTPS_PROXY=${HTTPS_PROXY}
+      # Again, HTTP(S)_PROXY needed for the docker build with kaniko
+
+
+
+sast:
+  stage: security-testing
+
+
+trivy_static_container_security:
+  stage: security-testing
+  only:
+    - dev
+    - main
+  # needs:
+  #   - build_process_microservice
+  script:
+    - export HTTP_PROXY=http://proxy.enst-bretagne.fr:8080
+    - export HTTPS_PROXY=http://proxy.enst-bretagne.fr:8080
+    - export NO_PROXY=gitlab-df.imt-atlantique.fr,gitlab-df-registry.imt-atlantique.fr
+    - export TRIVY_USERNAME=${TRIVY_USERNAME}
+    - export TRIVY_PASSWORD=${TRIVY_PASSWORD}
+    - unset http_proxy && ./trivy/trivy image gitlab-df-registry.imt-atlantique.fr/devops-s24/devops-app-s24-13/photographer:${CI_COMMIT_SHORT_SHA}  --username ${TRIVY_USERNAME} --password ${TRIVY_PASSWORD} --insecure
+    - unset http_proxy && ./trivy/trivy image gitlab-df-registry.imt-atlantique.fr/devops-s24/devops-app-s24-13/photo-service:${CI_COMMIT_SHORT_SHA}  --username ${TRIVY_USERNAME} --password ${TRIVY_PASSWORD} --insecure
+    - unset http_proxy && ./trivy/trivy image gitlab-df-registry.imt-atlantique.fr/devops-s24/devops-app-s24-13/process-image-service:latest  --username ${TRIVY_USERNAME} --password ${TRIVY_PASSWORD} --insecure
+
+
+
+deploy_photographer_service:
+  stage: deploy
+  only:
+    - dev
+    - main
+  image:
+    name: bitnami/kubectl
+    entrypoint: [""]
+  script:
+    - cd app/photographer-service
+    - sed -i "s/:latest/:${CI_COMMIT_SHORT_SHA}/g" k8s-photographer.yml
+    - sed -i "s/CHANGE_NAMESPACE/$MY_BRANCH/g" k8s-photographer.yml
+    - kubectl apply -f k8s-photographer.yml
+    - echo "YESSSS" $MY_BRANCH
+  environment:
+    name: production
+
+
+
+deploy_photo_service:
+  stage: deploy
+  only:
+    - dev
+    - main
+  image:
+    name: bitnami/kubectl
+    entrypoint: [""]
+  script:
+    - cd app/photo-service
+    - ls
+    - sed -i "s/:latest/:${CI_COMMIT_SHORT_SHA}/g" k8s-photo.yml
+    - sed -i "s/CHANGE_NAMESPACE/$MY_BRANCH/g" k8s-photo.yml
+    - kubectl apply -f k8s-photo.yml
+  environment:
+    name: production
+
+  
+deploy_process_image_service:
+  stage: deploy
+  only:
+    - dev
+    - main
+  image:
+    name: bitnami/kubectl
+    entrypoint: [""]
+  script:
+    - cd app/process_microservice
+    - sed -i "s/CHANGE_NAMESPACE/$MY_BRANCH/g" k8s/k8s-process-image.yml
+    - kubectl apply -f k8s/k8s-process-image.yml
+  environment:
+    name: production
+
+
+
+zap-dast-api-photographer-service:
+  stage: dynamic-security-testing
+  allow_failure: true
+  only:
+    - dev
+    - main
+  variables:
+    MONGO_HOST: mongo-test
+  image: owasp/zap2docker-stable:latest
+  script:
+   - mkdir /zap/wrk
+   - python  /zap/zap-api-scan.py   -t ${PHOTOGRAPHER_SERVICE} -f openapi -r ${CI_PROJECT_DIR}/zap-scan-photographer-service.html || true
+  after_script:
+   - ls /zap/wrk
+  artifacts:
+      when: always
+      expire_in: 1 week
+      paths:
+        - ${CI_PROJECT_DIR}/zap-scan-photographer-service.html 
+
+zap-dast-api-process-service:
+  stage: dynamic-security-testing
+  allow_failure: true
+  only:
+    - dev
+    - main
+  variables:
+    MONGO_HOST: mongo-test
+  image: owasp/zap2docker-stable:latest
+  script:
+   - mkdir /zap/wrk
+   - python  /zap/zap-api-scan.py   -t ${PROCESS_MICROSERVICE} -f openapi -r ${CI_PROJECT_DIR}/zap-scan-process-microservice.html || true
+  after_script:
+   - ls /zap/wrk
+  artifacts:
+      when: always
+      expire_in: 1 week
+      paths:
+        - ${CI_PROJECT_DIR}/zap-scan-process-microservice.html
+
+
+
+        

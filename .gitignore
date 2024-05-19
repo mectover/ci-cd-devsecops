@@ -1,0 +1,4 @@
+.scannerwork
+.pytest_cache
+app/process_microservice/k8s/mongo-secret.yaml
+app/process_microservice/k8s/k8s-mongo-secret.yaml
